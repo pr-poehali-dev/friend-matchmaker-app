@@ -209,9 +209,120 @@ const Avatar = ({ user, size = "md" }: { user: typeof users[0]; size?: "sm" | "m
   );
 };
 
+// ─── VIEWERS MODAL ───────────────────────────────────────────────────────────
+const viewersList = [
+  { id: 1, name: "Сергей Козлов", age: 30, city: "Москва", avatar: "С", color: "from-cyan-500 to-blue-500", compat: 88, online: true, time: "5 мин назад" },
+  { id: 2, name: "Анна Петрова", age: 25, city: "СПб", avatar: "А", color: "from-rose-500 to-pink-500", compat: 74, online: false, time: "1 час назад" },
+  { id: 3, name: "Дмитрий Орлов", age: 33, city: "Казань", avatar: "Д", color: "from-emerald-500 to-teal-500", compat: 81, online: true, time: "2 часа назад" },
+  { id: 4, name: "Виктория Нова", age: 27, city: "Москва", avatar: "В", color: "from-amber-500 to-orange-500", compat: 69, online: false, time: "вчера" },
+  { id: 5, name: "Роман Синицын", age: 29, city: "Екб", avatar: "Р", color: "from-purple-500 to-indigo-500", compat: 93, online: true, time: "вчера" },
+];
+
+const matchesList = [
+  { id: 1, name: "Максим Волков", age: 28, city: "Москва", avatar: "М", color: "from-blue-500 to-teal-500", compat: 92, online: true, time: "10 мин назад" },
+  { id: 2, name: "Игорь Смирнов", age: 31, city: "Москва", avatar: "И", color: "from-purple-500 to-indigo-500", compat: 85, online: true, time: "3 часа назад" },
+  { id: 3, name: "Марина Белова", age: 27, city: "Казань", avatar: "М", color: "from-amber-500 to-red-500", compat: 71, online: false, time: "вчера" },
+];
+
+const ViewersModal = ({ onClose }: { onClose: () => void }) => (
+  <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+    <div className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-5" />
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center">
+          <Icon name="Eye" size={18} className="text-blue-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-white font-display">Просмотры профиля</h2>
+          <p className="text-xs text-white/40">{stats.views} человек смотрели твой профиль</p>
+        </div>
+        <button onClick={onClose} className="ml-auto p-2 glass rounded-xl text-white/40 hover:text-white transition-all">
+          <Icon name="X" size={16} />
+        </button>
+      </div>
+      <div className="overflow-y-auto space-y-3 flex-1">
+        {viewersList.map(u => (
+          <div key={u.id} className="glass rounded-2xl p-4 flex items-center gap-4 border border-transparent hover:border-blue-500/20 transition-all">
+            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${u.color} flex items-center justify-center font-black text-white font-display text-sm flex-shrink-0 relative`}>
+              {u.avatar}
+              {u.online && <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-background" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-white text-sm">{u.name}</div>
+              <div className="text-xs text-white/40">{u.age} лет · {u.city}</div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <Icon name="Heart" size={10} className="text-pink-400" />
+                <span className="text-xs text-pink-400 font-medium">{u.compat}% совместимость</span>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <div className="text-xs text-white/30 mb-1.5">{u.time}</div>
+              <button className="text-xs px-3 py-1 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full text-white font-medium hover:opacity-80 transition-opacity">
+                Написать
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const MatchesModal = ({ onClose }: { onClose: () => void }) => (
+  <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+    <div className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-5" />
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 bg-pink-500/20 rounded-xl flex items-center justify-center">
+          <Icon name="Heart" size={18} className="text-pink-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-white font-display">Матчи</h2>
+          <p className="text-xs text-white/40">{stats.matches} человек поставили тебе лайк</p>
+        </div>
+        <button onClick={onClose} className="ml-auto p-2 glass rounded-xl text-white/40 hover:text-white transition-all">
+          <Icon name="X" size={16} />
+        </button>
+      </div>
+      <div className="overflow-y-auto space-y-3 flex-1">
+        {matchesList.map(u => (
+          <div key={u.id} className="glass rounded-2xl p-4 flex items-center gap-4 border border-transparent hover:border-pink-500/20 transition-all">
+            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${u.color} flex items-center justify-center font-black text-white font-display text-sm flex-shrink-0 relative`}>
+              {u.avatar}
+              {u.online && <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-background" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-white text-sm">{u.name}</div>
+              <div className="text-xs text-white/40">{u.age} лет · {u.city}</div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <Icon name="Heart" size={10} className="text-pink-400" />
+                <span className="text-xs text-pink-400 font-medium">{u.compat}% совместимость</span>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <div className="text-xs text-white/30 mb-1.5">{u.time}</div>
+              <button className="text-xs px-3 py-1 bg-gradient-to-r from-violet-500 to-pink-500 rounded-full text-white font-medium hover:opacity-80 transition-opacity">
+                Написать
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 // ─── PROFILE ─────────────────────────────────────────────────────────────────
-const ProfileTab = () => (
+const ProfileTab = ({ onGoToChat }: { onGoToChat: () => void }) => {
+  const [showViewers, setShowViewers] = useState(false);
+  const [showMatches, setShowMatches] = useState(false);
+
+  return (
   <div className="space-y-4 animate-fade-in-up">
+    {showViewers && <ViewersModal onClose={() => setShowViewers(false)} />}
+    {showMatches && <MatchesModal onClose={() => setShowMatches(false)} />}
     <div className="relative overflow-hidden rounded-3xl glass-strong p-6">
       <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-violet-600/20 blur-3xl animate-blob" />
       <div className="absolute -bottom-10 -left-5 w-32 h-32 rounded-full bg-pink-500/15 blur-3xl animate-blob" style={{ animationDelay: "2s" }} />
@@ -241,11 +352,11 @@ const ProfileTab = () => (
 
     <div className="grid grid-cols-3 gap-3">
       {[
-        { icon: "Eye", label: "Просмотры", val: stats.views, color: "text-blue-400" },
-        { icon: "Heart", label: "Матчи", val: stats.matches, color: "text-pink-400" },
-        { icon: "MessageCircle", label: "Чаты", val: 4, color: "text-violet-400" },
+        { icon: "Eye", label: "Просмотры", val: stats.views, color: "text-blue-400", onClick: () => setShowViewers(true) },
+        { icon: "Heart", label: "Матчи", val: stats.matches, color: "text-pink-400", onClick: () => setShowMatches(true) },
+        { icon: "MessageCircle", label: "Чаты", val: 4, color: "text-violet-400", onClick: onGoToChat },
       ].map(s => (
-        <div key={s.label} className="glass rounded-2xl p-4 text-center hover-lift cursor-pointer">
+        <div key={s.label} onClick={s.onClick} className="glass rounded-2xl p-4 text-center hover-lift cursor-pointer">
           <Icon name={s.icon as IconName} size={20} className={`${s.color} mx-auto mb-1`} />
           <div className="text-xl font-black text-white font-display">{s.val}</div>
           <div className="text-xs text-white/40">{s.label}</div>
@@ -300,7 +411,8 @@ const ProfileTab = () => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 // ─── SEARCH ──────────────────────────────────────────────────────────────────
 const SearchTab = () => {
@@ -798,7 +910,7 @@ export default function Index() {
 
   const renderTab = () => {
     switch (tab) {
-      case "profile": return <ProfileTab />;
+      case "profile": return <ProfileTab onGoToChat={() => setTab("chat")} />;
       case "search": return <SearchTab />;
       case "compat": return <CompatTab limit={limit} onPaywall={() => setShowPaywall(true)} />;
       case "chat": return <ChatTab />;
