@@ -6,6 +6,52 @@ type IconName = string;
 type Tab = "profile" | "search" | "compat" | "chat" | "recs" | "stats";
 
 const FREE_LIMIT = 3;
+const TRIAL_DAYS = 3;
+
+// ─── Zodiac helpers ─────────────────────────────────────────────────────────
+const getZodiac = (birthdate: string): { sign: string; emoji: string; element: string } => {
+  if (!birthdate) return { sign: "Неизвестно", emoji: "✨", element: "—" };
+  const d = new Date(birthdate);
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const signs: [number, number, string, string, string][] = [
+    [3, 21, "Овен", "♈", "Огонь"], [4, 20, "Телец", "♉", "Земля"],
+    [5, 21, "Близнецы", "♊", "Воздух"], [6, 21, "Рак", "♋", "Вода"],
+    [7, 23, "Лев", "♌", "Огонь"], [8, 23, "Дева", "♍", "Земля"],
+    [9, 23, "Весы", "♎", "Воздух"], [10, 23, "Скорпион", "♏", "Вода"],
+    [11, 22, "Стрелец", "♐", "Огонь"], [12, 22, "Козерог", "♑", "Земля"],
+    [1, 20, "Водолей", "♒", "Воздух"], [2, 19, "Рыбы", "♓", "Вода"],
+  ];
+  for (const [sm, sd, name, emoji, element] of signs) {
+    if (m === sm && day >= sd) return { sign: name, emoji, element };
+    if (m === sm - 1 && day < sd) return { sign: signs[signs.findIndex(s => s[0] === sm) - 1]?.[2] || "Рыбы", emoji: signs[signs.findIndex(s => s[0] === sm) - 1]?.[3] || "♓", element: signs[signs.findIndex(s => s[0] === sm) - 1]?.[4] || "Вода" };
+  }
+  return { sign: "Козерог", emoji: "♑", element: "Земля" };
+};
+
+const zodiacCompat: Record<string, string[]> = {
+  "Овен": ["Лев", "Стрелец", "Близнецы", "Водолей"],
+  "Телец": ["Дева", "Козерог", "Рак", "Рыбы"],
+  "Близнецы": ["Весы", "Водолей", "Овен", "Лев"],
+  "Рак": ["Скорпион", "Рыбы", "Телец", "Дева"],
+  "Лев": ["Овен", "Стрелец", "Близнецы", "Весы"],
+  "Дева": ["Телец", "Козерог", "Рак", "Скорпион"],
+  "Весы": ["Близнецы", "Водолей", "Лев", "Стрелец"],
+  "Скорпион": ["Рак", "Рыбы", "Дева", "Козерог"],
+  "Стрелец": ["Овен", "Лев", "Весы", "Водолей"],
+  "Козерог": ["Телец", "Дева", "Скорпион", "Рыбы"],
+  "Водолей": ["Близнецы", "Весы", "Овен", "Стрелец"],
+  "Рыбы": ["Рак", "Скорпион", "Телец", "Козерог"],
+};
+
+const getZodiacCompatScore = (sign1: string, sign2: string): number => {
+  if (!sign1 || !sign2 || sign1 === "Неизвестно" || sign2 === "Неизвестно") return 75;
+  if (sign1 === sign2) return 88;
+  const best = zodiacCompat[sign1] || [];
+  if (best.slice(0, 2).includes(sign2)) return 95;
+  if (best.slice(2, 4).includes(sign2)) return 82;
+  return 58;
+};
 
 // ─── useCompatLimit hook ────────────────────────────────────────────────────
 const useCompatLimit = () => {
@@ -14,12 +60,23 @@ const useCompatLimit = () => {
     return saved ? parseInt(saved, 10) : 0;
   });
   const [isPro, setIsPro] = useState<boolean>(() => localStorage.getItem("compat_pro") === "1");
+  const [trialStart] = useState<number>(() => {
+    const saved = localStorage.getItem("trial_start");
+    if (saved) return parseInt(saved, 10);
+    const now = Date.now();
+    localStorage.setItem("trial_start", String(now));
+    return now;
+  });
 
-  const remaining = isPro ? Infinity : Math.max(0, FREE_LIMIT - used);
-  const canUse = isPro || used < FREE_LIMIT;
+  const trialDaysLeft = Math.max(0, TRIAL_DAYS - Math.floor((Date.now() - trialStart) / 86400000));
+  const isTrialActive = trialDaysLeft > 0 && !isPro;
+  const effectivePro = isPro || isTrialActive;
+
+  const remaining = effectivePro ? Infinity : Math.max(0, FREE_LIMIT - used);
+  const canUse = effectivePro || used < FREE_LIMIT;
 
   const consume = () => {
-    if (isPro) return;
+    if (effectivePro) return;
     const next = used + 1;
     setUsed(next);
     localStorage.setItem("compat_used", String(next));
@@ -30,16 +87,77 @@ const useCompatLimit = () => {
     localStorage.setItem("compat_pro", "1");
   };
 
-  return { used, remaining, canUse, isPro, consume, upgradeToPro };
+  const cancelPro = () => {
+    setIsPro(false);
+    localStorage.removeItem("compat_pro");
+  };
+
+  return { used, remaining, canUse, isPro, isTrialActive, trialDaysLeft, effectivePro, consume, upgradeToPro, cancelPro };
 };
 
 // ─── PaywallModal ─────────────────────────────────────────────────────────
-const PaywallModal = ({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => void }) => {
+const PaywallModal = ({ onClose, onUpgrade, isPro, onCancel }: { onClose: () => void; onUpgrade: () => void; isPro?: boolean; onCancel?: () => void }) => {
   const plans = [
     { id: "month", label: "1 месяц", price: "299 ₽", per: "в месяц", popular: false },
     { id: "year", label: "1 год", price: "1 990 ₽", per: "167 ₽/мес", popular: true },
   ];
   const [selected, setSelected] = useState("year");
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  if (isPro && confirmCancel) return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+        <div className="w-16 h-16 bg-red-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <Icon name="AlertTriangle" size={28} className="text-red-400" />
+        </div>
+        <h2 className="text-xl font-black text-white font-display text-center mb-2">Отключить подписку?</h2>
+        <p className="text-white/50 text-sm text-center mb-6">Ты потеряешь доступ к безлимитным функциям. Уверен?</p>
+        <button onClick={() => { onCancel?.(); onClose(); }} className="w-full py-4 bg-red-500/20 border border-red-500/40 rounded-2xl text-red-400 font-bold text-sm hover:bg-red-500/30 transition-all mb-3">
+          Да, отключить подписку
+        </button>
+        <button onClick={() => setConfirmCancel(false)} className="w-full py-3 text-white/40 text-sm hover:text-white/60 transition-colors">
+          Отмена
+        </button>
+      </div>
+    </div>
+  );
+
+  if (isPro) return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+        <div className="w-16 h-16 bg-gradient-to-br from-yellow-500 to-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse-glow">
+          <Icon name="Crown" size={28} className="text-white" />
+        </div>
+        <h2 className="text-2xl font-black text-white font-display text-center mb-1">МЭТЧ Pro активен</h2>
+        <p className="text-white/50 text-sm text-center mb-6">У тебя активна подписка с полным доступом ко всем функциям.</p>
+        <div className="space-y-2.5 mb-6">
+          {[
+            { icon: "Infinity", text: "Безлимитные проверки совместимости" },
+            { icon: "Sparkles", text: "Детальный анализ по 10 категориям" },
+            { icon: "MessageCircle", text: "Неограниченные чаты" },
+            { icon: "Star", text: "Приоритет в рекомендациях" },
+          ].map(b => (
+            <div key={b.text} className="flex items-center gap-3">
+              <div className="w-7 h-7 bg-yellow-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Icon name={b.icon as IconName} size={14} className="text-yellow-400" />
+              </div>
+              <span className="text-sm text-white/80">{b.text}</span>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} className="w-full py-4 bg-gradient-to-r from-yellow-500 to-amber-500 rounded-2xl text-white font-bold font-display text-lg hover:opacity-90 transition-all mb-3">
+          Отлично!
+        </button>
+        <button onClick={() => setConfirmCancel(true)} className="w-full py-3 text-white/30 text-sm hover:text-red-400 transition-colors">
+          Отключить подписку
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
@@ -48,20 +166,14 @@ const PaywallModal = ({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: 
         className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up"
         onClick={e => e.stopPropagation()}
       >
-        {/* Handle */}
         <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-6" />
-
-        {/* Icon */}
         <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse-glow">
           <Icon name="Crown" size={28} className="text-white" />
         </div>
-
         <h2 className="text-2xl font-black text-white font-display text-center mb-1">МЭТЧ Pro</h2>
         <p className="text-white/50 text-sm text-center mb-6">
           Бесплатные запросы закончились. Оформи подписку и открой безлимитный доступ.
         </p>
-
-        {/* Benefits */}
         <div className="space-y-2.5 mb-6">
           {[
             { icon: "Infinity", text: "Безлимитные проверки совместимости" },
@@ -78,8 +190,6 @@ const PaywallModal = ({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: 
             </div>
           ))}
         </div>
-
-        {/* Plans */}
         <div className="flex gap-3 mb-5">
           {plans.map(p => (
             <button
@@ -98,8 +208,6 @@ const PaywallModal = ({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: 
             </button>
           ))}
         </div>
-
-        {/* CTA */}
         <button
           onClick={onUpgrade}
           className="w-full py-4 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl text-white font-bold font-display text-lg hover:opacity-90 transition-all active:scale-95 shadow-lg glow-purple mb-3"
@@ -123,13 +231,14 @@ const myProfile = {
   bio: "Люблю путешествия, кофе и неожиданные открытия. Ищу родственную душу.",
   tags: ["Путешествия", "Кино", "Йога", "Кулинария", "Музыка"],
   compat: 87,
+  birthdate: "1998-03-15",
 };
 
 const users = [
-  { id: 1, name: "Максим Волков", age: 28, city: "Москва", avatar: "М", color: "from-blue-500 to-teal-500", compat: 92, tags: ["Музыка", "Спорт", "Путешествия"], online: true },
-  { id: 2, name: "Дарья Иванова", age: 24, city: "СПб", avatar: "Д", color: "from-pink-500 to-orange-400", compat: 78, tags: ["Кино", "Йога", "Искусство"], online: false },
-  { id: 3, name: "Игорь Смирнов", age: 31, city: "Москва", avatar: "И", color: "from-purple-500 to-indigo-500", compat: 85, tags: ["Технологии", "Путешествия", "Кофе"], online: true },
-  { id: 4, name: "Марина Белова", age: 27, city: "Казань", avatar: "М", color: "from-amber-500 to-red-500", compat: 71, tags: ["Кулинария", "Музыка", "Бег"], online: true },
+  { id: 1, name: "Максим Волков", age: 28, city: "Москва", avatar: "М", color: "from-blue-500 to-teal-500", compat: 92, tags: ["Музыка", "Спорт", "Путешествия"], online: true, birthdate: "1996-08-15" },
+  { id: 2, name: "Дарья Иванова", age: 24, city: "СПб", avatar: "Д", color: "from-pink-500 to-orange-400", compat: 78, tags: ["Кино", "Йога", "Искусство"], online: false, birthdate: "2000-11-03" },
+  { id: 3, name: "Игорь Смирнов", age: 31, city: "Москва", avatar: "И", color: "from-purple-500 to-indigo-500", compat: 85, tags: ["Технологии", "Путешествия", "Кофе"], online: true, birthdate: "1993-06-22" },
+  { id: 4, name: "Марина Белова", age: 27, city: "Казань", avatar: "М", color: "from-amber-500 to-red-500", compat: 71, tags: ["Кулинария", "Музыка", "Бег"], online: true, birthdate: "1997-01-10" },
 ];
 
 const messages = [
@@ -205,6 +314,158 @@ const Avatar = ({ user, size = "md" }: { user: typeof users[0]; size?: "sm" | "m
     <div className={`${sz[size]} bg-gradient-to-br ${user.color} flex items-center justify-center font-black text-white font-display flex-shrink-0 relative`}>
       {user.avatar}
       {user.online && <span className="absolute bottom-0.5 right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-background" />}
+    </div>
+  );
+};
+
+// ─── NOTIFICATIONS MODAL ─────────────────────────────────────────────────────
+const notificationsList = [
+  { id: 1, icon: "Eye", color: "text-blue-400", bg: "bg-blue-500/20", text: "Сергей Козлов просмотрел твой профиль", sub: "5 минут назад", unread: true },
+  { id: 2, icon: "Heart", color: "text-pink-400", bg: "bg-pink-500/20", text: "Максим Волков поставил тебе лайк!", sub: "10 минут назад", unread: true },
+  { id: 3, icon: "Sparkles", color: "text-violet-400", bg: "bg-violet-500/20", text: "Новая рекомендация: 95% совместимость с Романом Синицыным", sub: "1 час назад", unread: true },
+  { id: 4, icon: "Star", color: "text-yellow-400", bg: "bg-yellow-500/20", text: "Результат совместимости с Игорем Смирновым обновлён: 85%", sub: "3 часа назад", unread: false },
+  { id: 5, icon: "Eye", color: "text-blue-400", bg: "bg-blue-500/20", text: "Анна Петрова просмотрела твой профиль", sub: "5 часов назад", unread: false },
+  { id: 6, icon: "Heart", color: "text-pink-400", bg: "bg-pink-500/20", text: "Игорь Смирнов поставил тебе лайк!", sub: "вчера", unread: false },
+  { id: 7, icon: "Sparkles", color: "text-violet-400", bg: "bg-violet-500/20", text: "Рекомендуем познакомиться с Дарьей Ивановой", sub: "вчера", unread: false },
+  { id: 8, icon: "Star", color: "text-yellow-400", bg: "bg-yellow-500/20", text: "Твой рейтинг совместимости вырос до 87%", sub: "2 дня назад", unread: false },
+];
+
+const NotificationsModal = ({ onClose }: { onClose: () => void }) => (
+  <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+    <div className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-5" />
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 bg-violet-500/20 rounded-xl flex items-center justify-center relative">
+          <Icon name="Bell" size={18} className="text-violet-400" />
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-pink-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">3</span>
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-white font-display">Уведомления</h2>
+          <p className="text-xs text-white/40">3 непрочитанных</p>
+        </div>
+        <button onClick={onClose} className="ml-auto p-2 glass rounded-xl text-white/40 hover:text-white transition-all">
+          <Icon name="X" size={16} />
+        </button>
+      </div>
+      <div className="overflow-y-auto space-y-2 flex-1">
+        {notificationsList.map(n => (
+          <div key={n.id} className={`flex items-start gap-3 p-3.5 rounded-2xl transition-all ${n.unread ? "glass border border-violet-500/20" : "glass opacity-70"}`}>
+            <div className={`w-9 h-9 ${n.bg} rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5`}>
+              <Icon name={n.icon as IconName} size={16} className={n.color} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm leading-snug ${n.unread ? "text-white" : "text-white/60"}`}>{n.text}</p>
+              <p className="text-xs text-white/30 mt-1">{n.sub}</p>
+            </div>
+            {n.unread && <div className="w-2 h-2 bg-pink-500 rounded-full flex-shrink-0 mt-2" />}
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+// ─── EDIT PROFILE MODAL ───────────────────────────────────────────────────────
+const EditProfileModal = ({ onClose }: { onClose: () => void }) => {
+  const [form, setForm] = useState({
+    name: myProfile.name,
+    age: String(myProfile.age),
+    city: myProfile.city,
+    bio: myProfile.bio,
+    birthdate: myProfile.birthdate,
+    goal: "Серьёзные отношения",
+    gender: "Женщина",
+    lookingFor: "Мужчину",
+  });
+  const zodiac = getZodiac(form.birthdate);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-5" />
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 bg-violet-500/20 rounded-xl flex items-center justify-center">
+            <Icon name="Pencil" size={18} className="text-violet-400" />
+          </div>
+          <h2 className="text-lg font-black text-white font-display">Редактировать профиль</h2>
+          <button onClick={onClose} className="ml-auto p-2 glass rounded-xl text-white/40 hover:text-white transition-all">
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 space-y-4">
+          <div>
+            <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Имя и фамилия</label>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className="w-full px-4 py-3 glass-strong rounded-2xl text-white text-sm outline-none border border-transparent focus:border-violet-500/40 transition-all" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Возраст</label>
+              <input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} type="number"
+                className="w-full px-4 py-3 glass-strong rounded-2xl text-white text-sm outline-none border border-transparent focus:border-violet-500/40 transition-all" />
+            </div>
+            <div>
+              <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Город</label>
+              <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
+                className="w-full px-4 py-3 glass-strong rounded-2xl text-white text-sm outline-none border border-transparent focus:border-violet-500/40 transition-all" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Дата рождения</label>
+            <input value={form.birthdate} onChange={e => setForm(f => ({ ...f, birthdate: e.target.value }))} type="date"
+              className="w-full px-4 py-3 glass-strong rounded-2xl text-white text-sm outline-none border border-transparent focus:border-violet-500/40 transition-all" />
+            {form.birthdate && (
+              <div className="mt-2 flex items-center gap-2 px-3 py-2 glass rounded-xl">
+                <span className="text-lg">{zodiac.emoji}</span>
+                <span className="text-sm text-white/70">{zodiac.sign} · стихия {zodiac.element}</span>
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Пол</label>
+            <div className="flex gap-2">
+              {["Женщина", "Мужчина"].map(g => (
+                <button key={g} onClick={() => setForm(f => ({ ...f, gender: g }))}
+                  className={`flex-1 py-3 rounded-2xl text-sm font-medium transition-all ${form.gender === g ? "bg-gradient-to-r from-violet-500 to-pink-500 text-white" : "glass text-white/60 hover:text-white"}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Ищу</label>
+            <div className="flex gap-2">
+              {["Мужчину", "Женщину", "Не важно"].map(g => (
+                <button key={g} onClick={() => setForm(f => ({ ...f, lookingFor: g }))}
+                  className={`flex-1 py-2.5 rounded-2xl text-xs font-medium transition-all ${form.lookingFor === g ? "bg-gradient-to-r from-violet-500 to-pink-500 text-white" : "glass text-white/60 hover:text-white"}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">Цель знакомства</label>
+            <div className="grid grid-cols-2 gap-2">
+              {["Серьёзные отношения", "Дружба", "Общение", "Не определился"].map(g => (
+                <button key={g} onClick={() => setForm(f => ({ ...f, goal: g }))}
+                  className={`py-2.5 rounded-2xl text-xs font-medium transition-all ${form.goal === g ? "bg-gradient-to-r from-violet-500 to-pink-500 text-white" : "glass text-white/60 hover:text-white"}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2 block">О себе</label>
+            <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} rows={3}
+              className="w-full px-4 py-3 glass-strong rounded-2xl text-white text-sm outline-none border border-transparent focus:border-violet-500/40 transition-all resize-none" />
+          </div>
+        </div>
+        <button onClick={onClose} className="w-full mt-4 py-4 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl text-white font-bold font-display text-base hover:opacity-90 transition-all active:scale-95">
+          Сохранить
+        </button>
+      </div>
     </div>
   );
 };
@@ -318,11 +579,13 @@ const MatchesModal = ({ onClose }: { onClose: () => void }) => (
 const ProfileTab = ({ onGoToChat }: { onGoToChat: () => void }) => {
   const [showViewers, setShowViewers] = useState(false);
   const [showMatches, setShowMatches] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   return (
   <div className="space-y-4 animate-fade-in-up">
     {showViewers && <ViewersModal onClose={() => setShowViewers(false)} />}
     {showMatches && <MatchesModal onClose={() => setShowMatches(false)} />}
+    {showEdit && <EditProfileModal onClose={() => setShowEdit(false)} />}
     <div className="relative overflow-hidden rounded-3xl glass-strong p-6">
       <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-violet-600/20 blur-3xl animate-blob" />
       <div className="absolute -bottom-10 -left-5 w-32 h-32 rounded-full bg-pink-500/15 blur-3xl animate-blob" style={{ animationDelay: "2s" }} />
@@ -338,7 +601,7 @@ const ProfileTab = ({ onGoToChat }: { onGoToChat: () => void }) => {
             <span className="text-emerald-400 text-xs font-medium">Онлайн</span>
           </div>
         </div>
-        <button className="ml-auto p-2.5 glass rounded-xl text-white/60 hover:text-white transition-all">
+        <button onClick={() => setShowEdit(true)} className="ml-auto p-2.5 glass rounded-xl text-white/60 hover:text-white transition-all">
           <Icon name="Pencil" size={16} />
         </button>
       </div>
@@ -489,12 +752,18 @@ const CompatTab = ({ limit, onPaywall }: { limit: ReturnType<typeof useCompatLim
     { q: "Как ты проводишь выходные?", opts: ["Активно на природе", "Дома с книгой", "С друзьями в городе", "Путешествую"] },
     { q: "Что важнее в отношениях?", opts: ["Доверие", "Общие интересы", "Страсть", "Поддержка"] },
   ];
+
+  const myZodiac = getZodiac(myProfile.birthdate);
+  const theirZodiac = getZodiac(selected.birthdate);
+  const zodiacScore = getZodiacCompatScore(myZodiac.sign, theirZodiac.sign);
+
   const categories = [
     { name: "Ценности", score: 91, from: "from-violet-500", to: "to-purple-600" },
     { name: "Интересы", score: 88, from: "from-pink-500", to: "to-rose-500" },
     { name: "Темперамент", score: 79, from: "from-orange-400", to: "to-amber-500" },
     { name: "Цели", score: 85, from: "from-blue-500", to: "to-cyan-500" },
     { name: "Образ жизни", score: 72, from: "from-teal-500", to: "to-emerald-500" },
+    { name: `Зодиак (${myZodiac.sign} + ${theirZodiac.sign})`, score: zodiacScore, from: "from-indigo-500", to: "to-violet-500" },
   ];
 
   const handleSelectUser = (u: typeof users[0]) => {
@@ -557,7 +826,7 @@ const CompatTab = ({ limit, onPaywall }: { limit: ReturnType<typeof useCompatLim
   return (
     <div className="space-y-4 animate-fade-in-up">
       {/* Limit badge */}
-      {!limit.isPro && (
+      {!limit.effectivePro && (
         <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all ${limit.remaining === 0 ? "border-pink-500/40 bg-pink-500/10" : "border-violet-500/20 glass"}`}>
           <Icon name={limit.remaining === 0 ? "Lock" : "Zap"} size={16} className={limit.remaining === 0 ? "text-pink-400" : "text-violet-400"} />
           <div className="flex-1">
@@ -567,10 +836,16 @@ const CompatTab = ({ limit, onPaywall }: { limit: ReturnType<typeof useCompatLim
             }
           </div>
           {limit.remaining === 0 && (
-            <button onClick={() => setShowPaywall(true)} className="text-xs px-3 py-1.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-xl text-white font-bold hover:opacity-90 transition-all">
+            <button onClick={() => onPaywall()} className="text-xs px-3 py-1.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-xl text-white font-bold hover:opacity-90 transition-all">
               Pro
             </button>
           )}
+        </div>
+      )}
+      {limit.isTrialActive && !limit.isPro && (
+        <div className="flex items-center gap-2 px-4 py-2 glass rounded-2xl border border-emerald-500/20">
+          <Icon name="Gift" size={14} className="text-emerald-400" />
+          <span className="text-sm text-emerald-300 font-medium">Бесплатный период: осталось {limit.trialDaysLeft} {limit.trialDaysLeft === 1 ? "день" : "дня"}</span>
         </div>
       )}
       {limit.isPro && (
@@ -600,7 +875,7 @@ const CompatTab = ({ limit, onPaywall }: { limit: ReturnType<typeof useCompatLim
       <div className="glass-strong rounded-3xl p-6 text-center relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-violet-900/20 to-pink-900/20" />
         <div className="relative flex justify-center mb-4">
-          <CompatCircle pct={selected.compat} size={160} stroke={14} />
+          <CompatCircle pct={Math.round((selected.compat + zodiacScore) / 2)} size={160} stroke={14} />
         </div>
         <h3 className="text-xl font-black text-white font-display relative">{selected.name}</h3>
         <p className="text-white/50 text-sm mt-1 relative">{selected.age} лет · {selected.city}</p>
@@ -609,6 +884,22 @@ const CompatTab = ({ limit, onPaywall }: { limit: ReturnType<typeof useCompatLim
           <span className="text-sm text-white/70">
             {selected.compat >= 90 ? "Исключительная совместимость!" : selected.compat >= 80 ? "Высокая совместимость" : "Хорошая совместимость"}
           </span>
+        </div>
+        <div className="flex items-center justify-center gap-4 mt-4 relative">
+          <div className="flex flex-col items-center gap-1 px-4 py-2 glass rounded-2xl">
+            <span className="text-2xl">{myZodiac.emoji}</span>
+            <span className="text-xs text-white/60">{myZodiac.sign}</span>
+            <span className="text-[10px] text-white/30">{myZodiac.element}</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <div className={`text-sm font-bold ${zodiacScore >= 85 ? "text-emerald-400" : zodiacScore >= 70 ? "text-yellow-400" : "text-red-400"}`}>{zodiacScore}%</div>
+            <span className="text-[10px] text-white/30">зодиак</span>
+          </div>
+          <div className="flex flex-col items-center gap-1 px-4 py-2 glass rounded-2xl">
+            <span className="text-2xl">{theirZodiac.emoji}</span>
+            <span className="text-xs text-white/60">{theirZodiac.sign}</span>
+            <span className="text-[10px] text-white/30">{theirZodiac.element}</span>
+          </div>
         </div>
       </div>
 
@@ -907,6 +1198,7 @@ export default function Index() {
   const [tab, setTab] = useState<Tab>("profile");
   const limit = useCompatLimit();
   const [showPaywall, setShowPaywall] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const renderTab = () => {
     switch (tab) {
@@ -933,7 +1225,14 @@ export default function Index() {
         <div className="flex items-center justify-between max-w-lg mx-auto">
           <h1 className="text-xl font-black font-display gradient-text tracking-wider">МЭТЧ</h1>
           <div className="flex items-center gap-2">
-            {!limit.isPro && (
+            {limit.isTrialActive && !limit.isPro && (
+              <button onClick={() => setShowPaywall(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl text-white text-xs font-bold hover:opacity-90 transition-all">
+                <Icon name="Gift" size={12} />
+                Триал {limit.trialDaysLeft}д
+              </button>
+            )}
+            {!limit.effectivePro && (
               <button onClick={() => setShowPaywall(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-xl text-white text-xs font-bold hover:opacity-90 transition-all">
                 <Icon name="Crown" size={12} />
@@ -941,12 +1240,12 @@ export default function Index() {
               </button>
             )}
             {limit.isPro && (
-              <div className="flex items-center gap-1 px-2.5 py-1.5 glass rounded-xl border border-yellow-500/30">
+              <button onClick={() => setShowPaywall(true)} className="flex items-center gap-1 px-2.5 py-1.5 glass rounded-xl border border-yellow-500/30 hover:border-yellow-500/60 transition-all">
                 <Icon name="Crown" size={12} className="text-yellow-400" />
                 <span className="text-yellow-400 text-xs font-bold">Pro</span>
-              </div>
+              </button>
             )}
-            <button className="relative p-2.5 glass rounded-xl text-white/60 hover:text-white transition-all">
+            <button onClick={() => setShowNotifications(true)} className="relative p-2.5 glass rounded-xl text-white/60 hover:text-white transition-all">
               <Icon name="Bell" size={18} />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-pink-500 rounded-full" />
             </button>
@@ -960,9 +1259,17 @@ export default function Index() {
         {renderTab()}
       </div>
 
+      {/* Notifications */}
+      {showNotifications && <NotificationsModal onClose={() => setShowNotifications(false)} />}
+
       {/* Global paywall */}
       {showPaywall && (
-        <PaywallModal onClose={() => setShowPaywall(false)} onUpgrade={() => { limit.upgradeToPro(); setShowPaywall(false); }} />
+        <PaywallModal
+          onClose={() => setShowPaywall(false)}
+          onUpgrade={() => { limit.upgradeToPro(); setShowPaywall(false); }}
+          isPro={limit.isPro}
+          onCancel={() => { limit.cancelPro(); setShowPaywall(false); }}
+        />
       )}
 
       {/* Bottom nav */}
