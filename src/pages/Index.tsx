@@ -5,6 +5,115 @@ type IconName = string;
 // ─── Types ─────────────────────────────────────────────────────────────────
 type Tab = "profile" | "search" | "compat" | "chat" | "recs" | "stats";
 
+const FREE_LIMIT = 3;
+
+// ─── useCompatLimit hook ────────────────────────────────────────────────────
+const useCompatLimit = () => {
+  const [used, setUsed] = useState<number>(() => {
+    const saved = localStorage.getItem("compat_used");
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  const [isPro, setIsPro] = useState<boolean>(() => localStorage.getItem("compat_pro") === "1");
+
+  const remaining = isPro ? Infinity : Math.max(0, FREE_LIMIT - used);
+  const canUse = isPro || used < FREE_LIMIT;
+
+  const consume = () => {
+    if (isPro) return;
+    const next = used + 1;
+    setUsed(next);
+    localStorage.setItem("compat_used", String(next));
+  };
+
+  const upgradeToPro = () => {
+    setIsPro(true);
+    localStorage.setItem("compat_pro", "1");
+  };
+
+  return { used, remaining, canUse, isPro, consume, upgradeToPro };
+};
+
+// ─── PaywallModal ─────────────────────────────────────────────────────────
+const PaywallModal = ({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => void }) => {
+  const plans = [
+    { id: "month", label: "1 месяц", price: "299 ₽", per: "в месяц", popular: false },
+    { id: "year", label: "1 год", price: "1 990 ₽", per: "167 ₽/мес", popular: true },
+  ];
+  const [selected, setSelected] = useState("year");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-lg bg-[hsl(240,15%,8%)] rounded-t-3xl p-6 pb-10 border-t border-white/10 animate-fade-in-up"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+
+        {/* Icon */}
+        <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse-glow">
+          <Icon name="Crown" size={28} className="text-white" />
+        </div>
+
+        <h2 className="text-2xl font-black text-white font-display text-center mb-1">МЭТЧ Pro</h2>
+        <p className="text-white/50 text-sm text-center mb-6">
+          Бесплатные запросы закончились. Оформи подписку и открой безлимитный доступ.
+        </p>
+
+        {/* Benefits */}
+        <div className="space-y-2.5 mb-6">
+          {[
+            { icon: "Infinity", text: "Безлимитные проверки совместимости" },
+            { icon: "Sparkles", text: "Детальный анализ по 10 категориям" },
+            { icon: "MessageCircle", text: "Неограниченные чаты" },
+            { icon: "Star", text: "Приоритет в рекомендациях" },
+            { icon: "BarChart2", text: "Расширенная статистика" },
+          ].map(b => (
+            <div key={b.text} className="flex items-center gap-3">
+              <div className="w-7 h-7 bg-violet-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Icon name={b.icon as IconName} size={14} className="text-violet-400" />
+              </div>
+              <span className="text-sm text-white/80">{b.text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Plans */}
+        <div className="flex gap-3 mb-5">
+          {plans.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setSelected(p.id)}
+              className={`flex-1 p-4 rounded-2xl border transition-all relative ${selected === p.id ? "border-violet-500 bg-violet-500/10" : "border-white/10 glass"}`}
+            >
+              {p.popular && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-full text-xs text-white font-bold whitespace-nowrap">
+                  Выгоднее
+                </div>
+              )}
+              <div className="text-white font-bold text-sm">{p.label}</div>
+              <div className="gradient-text font-black text-lg font-display">{p.price}</div>
+              <div className="text-white/40 text-xs">{p.per}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <button
+          onClick={onUpgrade}
+          className="w-full py-4 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl text-white font-bold font-display text-lg hover:opacity-90 transition-all active:scale-95 shadow-lg glow-purple mb-3"
+        >
+          Оформить подписку
+        </button>
+        <button onClick={onClose} className="w-full py-3 text-white/40 text-sm hover:text-white/60 transition-colors">
+          Не сейчас
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ─── Mock Data ─────────────────────────────────────────────────────────────
 const myProfile = {
   name: "Алина Соколова",
@@ -260,7 +369,7 @@ const SearchTab = () => {
 };
 
 // ─── COMPAT ───────────────────────────────────────────────────────────────────
-const CompatTab = () => {
+const CompatTab = ({ limit, onPaywall }: { limit: ReturnType<typeof useCompatLimit>; onPaywall: () => void }) => {
   const [selected, setSelected] = useState(users[0]);
   const [testStep, setTestStep] = useState(0);
   const [showTest, setShowTest] = useState(false);
@@ -275,6 +384,15 @@ const CompatTab = () => {
     { name: "Цели", score: 85, from: "from-blue-500", to: "to-cyan-500" },
     { name: "Образ жизни", score: 72, from: "from-teal-500", to: "to-emerald-500" },
   ];
+
+  const handleSelectUser = (u: typeof users[0]) => {
+    if (!limit.canUse && selected.id !== u.id) {
+      onPaywall();
+      return;
+    }
+    setSelected(u);
+    limit.consume();
+  };
 
   if (showTest) return (
     <div className="animate-fade-in-up">
@@ -326,16 +444,44 @@ const CompatTab = () => {
 
   return (
     <div className="space-y-4 animate-fade-in-up">
+      {/* Limit badge */}
+      {!limit.isPro && (
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all ${limit.remaining === 0 ? "border-pink-500/40 bg-pink-500/10" : "border-violet-500/20 glass"}`}>
+          <Icon name={limit.remaining === 0 ? "Lock" : "Zap"} size={16} className={limit.remaining === 0 ? "text-pink-400" : "text-violet-400"} />
+          <div className="flex-1">
+            {limit.remaining === 0
+              ? <span className="text-sm text-pink-300 font-medium">Бесплатные запросы исчерпаны</span>
+              : <span className="text-sm text-white/70">Осталось бесплатных: <span className="font-bold text-white">{limit.remaining}</span> из {FREE_LIMIT}</span>
+            }
+          </div>
+          {limit.remaining === 0 && (
+            <button onClick={() => setShowPaywall(true)} className="text-xs px-3 py-1.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-xl text-white font-bold hover:opacity-90 transition-all">
+              Pro
+            </button>
+          )}
+        </div>
+      )}
+      {limit.isPro && (
+        <div className="flex items-center gap-2 px-4 py-2 glass rounded-2xl border border-yellow-500/20">
+          <Icon name="Crown" size={14} className="text-yellow-400" />
+          <span className="text-sm text-yellow-300 font-medium">МЭТЧ Pro — безлимитный доступ</span>
+        </div>
+      )}
+
       <div>
         <h3 className="text-xs text-white/40 uppercase tracking-wider mb-3 font-medium">Выбери пользователя</h3>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {users.map(u => (
-            <button key={u.id} onClick={() => setSelected(u)}
-              className={`flex flex-col items-center gap-1.5 p-3 rounded-2xl flex-shrink-0 transition-all ${selected.id === u.id ? "bg-violet-500/20 border border-violet-500/40" : "glass border border-transparent"}`}>
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${u.color} flex items-center justify-center font-black text-white text-sm font-display`}>{u.avatar}</div>
-              <span className="text-xs text-white/70 whitespace-nowrap">{u.name.split(" ")[0]}</span>
-            </button>
-          ))}
+          {users.map(u => {
+            const isLocked = !limit.canUse && selected.id !== u.id;
+            return (
+              <button key={u.id} onClick={() => handleSelectUser(u)}
+                className={`flex flex-col items-center gap-1.5 p-3 rounded-2xl flex-shrink-0 transition-all relative ${selected.id === u.id ? "bg-violet-500/20 border border-violet-500/40" : "glass border border-transparent"}`}>
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${u.color} flex items-center justify-center font-black text-white text-sm font-display ${isLocked ? "opacity-40" : ""}`}>{u.avatar}</div>
+                {isLocked && <div className="absolute top-3 right-3"><Icon name="Lock" size={12} className="text-white/60" /></div>}
+                <span className={`text-xs whitespace-nowrap ${isLocked ? "text-white/30" : "text-white/70"}`}>{u.name.split(" ")[0]}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -384,11 +530,16 @@ const CompatTab = () => {
         </div>
       </div>
 
-      <button onClick={() => setShowTest(true)}
-        className="w-full py-4 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl text-white font-bold font-display hover:opacity-90 transition-all active:scale-95 shadow-lg glow-purple">
-        <Icon name="PlayCircle" size={18} className="inline mr-2" />
-        Пройти тест совместимости
+      <button
+        onClick={() => { if (!limit.canUse) { onPaywall(); return; } limit.consume(); setShowTest(true); }}
+        className="w-full py-4 bg-gradient-to-r from-violet-500 to-pink-500 rounded-2xl text-white font-bold font-display hover:opacity-90 transition-all active:scale-95 shadow-lg glow-purple"
+      >
+        {limit.canUse
+          ? <><Icon name="PlayCircle" size={18} className="inline mr-2" />Пройти тест совместимости</>
+          : <><Icon name="Lock" size={18} className="inline mr-2" />Доступно в Pro</>
+        }
       </button>
+
     </div>
   );
 };
@@ -642,12 +793,14 @@ const navItems: { id: Tab; icon: string; label: string }[] = [
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function Index() {
   const [tab, setTab] = useState<Tab>("profile");
+  const limit = useCompatLimit();
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const renderTab = () => {
     switch (tab) {
       case "profile": return <ProfileTab />;
       case "search": return <SearchTab />;
-      case "compat": return <CompatTab />;
+      case "compat": return <CompatTab limit={limit} onPaywall={() => setShowPaywall(true)} />;
       case "chat": return <ChatTab />;
       case "recs": return <RecsTab />;
       case "stats": return <StatsTab />;
@@ -668,6 +821,19 @@ export default function Index() {
         <div className="flex items-center justify-between max-w-lg mx-auto">
           <h1 className="text-xl font-black font-display gradient-text tracking-wider">МЭТЧ</h1>
           <div className="flex items-center gap-2">
+            {!limit.isPro && (
+              <button onClick={() => setShowPaywall(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-violet-500 to-pink-500 rounded-xl text-white text-xs font-bold hover:opacity-90 transition-all">
+                <Icon name="Crown" size={12} />
+                Pro
+              </button>
+            )}
+            {limit.isPro && (
+              <div className="flex items-center gap-1 px-2.5 py-1.5 glass rounded-xl border border-yellow-500/30">
+                <Icon name="Crown" size={12} className="text-yellow-400" />
+                <span className="text-yellow-400 text-xs font-bold">Pro</span>
+              </div>
+            )}
             <button className="relative p-2.5 glass rounded-xl text-white/60 hover:text-white transition-all">
               <Icon name="Bell" size={18} />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-pink-500 rounded-full" />
@@ -681,6 +847,11 @@ export default function Index() {
       <div className="px-4 py-4 pb-32 max-w-lg mx-auto relative z-10">
         {renderTab()}
       </div>
+
+      {/* Global paywall */}
+      {showPaywall && (
+        <PaywallModal onClose={() => setShowPaywall(false)} onUpgrade={() => { limit.upgradeToPro(); setShowPaywall(false); }} />
+      )}
 
       {/* Bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-20">
