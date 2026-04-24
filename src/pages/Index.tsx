@@ -666,7 +666,7 @@ export default function Index() {
       {/* Header */}
       <div className="sticky top-0 z-20 px-4 pt-4 pb-3 bg-background/80 backdrop-blur-xl border-b border-white/5">
         <div className="flex items-center justify-between max-w-lg mx-auto">
-          <h1 className="text-xl font-black font-display gradient-text tracking-wider">МАТЧ</h1>
+          <h1 className="text-xl font-black font-display gradient-text tracking-wider">МЭТЧ</h1>
           <div className="flex items-center gap-2">
             <button className="relative p-2.5 glass rounded-xl text-white/60 hover:text-white transition-all">
               <Icon name="Bell" size={18} />
